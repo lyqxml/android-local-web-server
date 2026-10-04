@@ -49,6 +49,16 @@ class SettingsActivity : ComponentActivity() {
         setupAbout()
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            val rootView = findViewById<android.view.View>(R.id.settingsRoot)
+            ThemeApply.background(this, rootView)
+            ThemeApply.cards(this, rootView)
+        } catch (_: Exception) {
+        }
+    }
+
     private fun setupDesignStyle() {
         val rg = findViewById<RadioGroup>(R.id.rgDesignStyle)
         val rbModern = findViewById<RadioButton>(R.id.rbModern)
