@@ -8,12 +8,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.*
 import android.provider.OpenableColumns
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import eightbitlab.com.blurview.BlurView
+import eightbitlab.com.blurview.RenderScriptBlur
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -89,6 +92,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var tabFilesInner: LinearLayout
     private lateinit var tabConsoleInner: LinearLayout
     private var currentPageIndex = -1
+    private lateinit var blurView: BlurView
     private lateinit var toolbar: com.google.android.material.appbar.MaterialToolbar
     private var selectedProvider: Provider = TunnelService.LOCALHOST_RUN
     private var accessPassword: String? = null
@@ -211,12 +215,17 @@ class MainActivity : ComponentActivity() {
 
             switchPage(0)
 
-            // 滚动时实时刷新底栏模糊
-            val blurScrollListener = View.OnScrollChangeListener { _, _, _, _, _ -> scheduleBlurUpdate() }
-            pageHome.setOnScrollChangeListener(blurScrollListener)
-            pageFiles.setOnScrollChangeListener(blurScrollListener)
-            pageConsole.setOnScrollChangeListener(blurScrollListener)
-            findViewById<ScrollView>(R.id.logScrollView)?.setOnScrollChangeListener(blurScrollListener)
+            // 底栏毛玻璃：由 BlurView（公开库 Dimezis/BlurView）自动抓取背后内容并实时模糊
+            blurView = findViewById(R.id.bottomBlur)
+            try {
+                blurView.setupWith(findViewById<FrameLayout>(R.id.pageContainer))
+                    .setFrameClearDrawable(ColorDrawable(currentBaseBackgroundColor()))
+                    .setBlurAlgorithm(RenderScriptBlur(this))
+                    .setBlurRadius(20f)
+                    .setBlurAutoUpdate(true)
+                    .setHasFixedTransformationMatrix(true)
+            } catch (_: Exception) {
+            }
 
             registerReceiver(receiver, IntentFilter(WebServerService.ACTION_LOG), RECEIVER_NOT_EXPORTED)
             registerReceiver(tunnelReceiver, IntentFilter(TunnelService.ACTION_TUNNEL), RECEIVER_NOT_EXPORTED)
@@ -999,8 +1008,6 @@ class MainActivity : ComponentActivity() {
         tabConsole.isSelected = index == 2
 
         updateTabBackgrounds(index)
-        handler.postDelayed({ applyBottomBarBlur() }, 280)
-        scheduleBlurUpdate()
     }
 
     /** Tab 选中背景：现代=胶囊，经典=方形描边 */
@@ -1016,99 +1023,26 @@ class MainActivity : ComponentActivity() {
         try {
             val rootLayout = findViewById<androidx.coordinatorlayout.widget.CoordinatorLayout>(R.id.rootLayout)
 
-            // 背景：自定义图片 > 自定义颜色 > 系统默认
-            if (ThemeManager.hasCustomBgImage(this)) {
-                try {
-                    val bmp = BitmapFactory.decodeFile(ThemeManager.getCustomBgFile(this).absolutePath)
-                    if (bmp != null) {
-                        rootLayout.background = BitmapDrawable(resources, bmp)
-                    }
-                } catch (_: Exception) {
-                    rootLayout.background = null
-                }
-            } else {
-                val bgColor = ThemeManager.getBgColor(this)
-                if (bgColor != null) rootLayout.setBackgroundColor(bgColor) else rootLayout.background = null
-            }
+            // 背景 + 卡片（现代=圆角 / 经典=直角）
+            ThemeApply.background(this, rootLayout)
+            ThemeApply.cards(this, rootLayout)
 
-            // 卡片
+            // 底栏：现代=BlurView 毛玻璃 / 经典=纯色
             val modern = ThemeManager.isModern(this)
-            val cardColor = ThemeManager.getCardColor(this)
-            applyCardsTo(rootLayout, modern, cardColor)
-
-            // 底栏 + Tab
-            applyBottomBarBlur()
+            findViewById<LinearLayout>(R.id.bottomNav)?.background = ContextCompat.getDrawable(
+                this,
+                if (modern) R.drawable.bg_nav_scrim else R.drawable.bg_bottom_classic
+            )
             updateTabBackgrounds(currentPageIndex.coerceAtLeast(0))
         } catch (_: Exception) {}
     }
 
-    /** 递归应用卡片颜色与圆角 */
-    private fun applyCardsTo(v: View, modern: Boolean, cardColor: Int?) {
-        if (v is com.google.android.material.card.MaterialCardView) {
-            val density = resources.displayMetrics.density
-            try { v.radius = if (modern) 16f * density else 0f } catch (_: Exception) {}
-            val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            val def = if (isNight) 0xFF14181F.toInt() else 0xFFFDFCFF.toInt()
-            try { v.setCardBackgroundColor(cardColor ?: def) } catch (_: Exception) {}
-        }
-        if (v is ViewGroup) {
-            for (i in 0 until v.childCount) {
-                applyCardsTo(v.getChildAt(i), modern, cardColor)
-            }
-        }
-    }
-
-    /** 节流调度：滚动/切换时触发，避免高频重绘；60ms 内只刷新一次 */
-    private var blurUpdatePending = false
-    private val blurUpdateRunnable = Runnable {
-        blurUpdatePending = false
-        applyBottomBarBlur(0)
-    }
-
-    private fun scheduleBlurUpdate() {
-        if (!ThemeManager.isModern(this)) return
-        if (blurUpdatePending) return
-        blurUpdatePending = true
-        handler.postDelayed(blurUpdateRunnable, 60)
-    }
-
-    /** 底栏：现代=StackBlur 高斯模糊（纯代码，不依赖 Android 12 接口）；经典=纯色 */
-    private fun applyBottomBarBlur(retry: Int = 2) {
-        try {
-            val nav = findViewById<LinearLayout>(R.id.bottomNav) ?: return
-            if (!ThemeManager.isModern(this)) {
-                nav.background = ContextCompat.getDrawable(this, R.drawable.bg_bottom_classic)
-                return
-            }
-            val container = findViewById<FrameLayout>(R.id.pageContainer) ?: return
-            val w = container.width
-            val h = nav.height
-            if (w <= 0 || h <= 0 || container.height <= 0) {
-                if (retry > 0) handler.postDelayed({ applyBottomBarBlur(retry - 1) }, 400)
-                return
-            }
-            // 只绘制当前页面（避免把底栏自身画进模糊源）
-            val visiblePage: View? = when (currentPageIndex) {
-                0 -> pageHome
-                1 -> pageFiles
-                2 -> pageConsole
-                else -> null
-            }
-            val src: View = visiblePage ?: container
-            // 降采样 1/4 分辨率渲染 + 小半径模糊，保证滚动时实时刷新也足够流畅
-            val scale = 4
-            val bw = (w / scale).coerceAtLeast(1)
-            val bh = (h / scale).coerceAtLeast(1)
-            val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bmp)
-            canvas.scale(1f / scale, 1f / scale)
-            canvas.translate(0f, -(src.height - h).toFloat())
-            src.draw(canvas)
-            val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            canvas.drawColor(if (isNight) 0x66000000.toInt() else 0x40FFFFFF.toInt())
-            val blurred = StackBlur.blur(bmp, 5)
-            nav.background = BitmapDrawable(resources, blurred)
-        } catch (_: Exception) {}
+    /** 模糊帧的兜底底色（有自定义背景色时优先用它） */
+    private fun currentBaseBackgroundColor(): Int {
+        ThemeManager.getBgColor(this)?.let { return it }
+        val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        return if (isNight) 0xFF14181F.toInt() else 0xFFFDFCFF.toInt()
     }
 
     override fun onResume() {
@@ -1276,7 +1210,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        try { handler.removeCallbacks(blurUpdateRunnable) } catch (_: Exception) {}
         try { downloadProgress?.dismiss() } catch (_: Exception) {}
         try { unregisterReceiver(receiver) } catch (_: Exception) {}
         try { unregisterReceiver(tunnelReceiver) } catch (_: Exception) {}
