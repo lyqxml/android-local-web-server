@@ -1137,7 +1137,7 @@ class MainActivity : ComponentActivity() {
                 onFinish = { success, path ->
                     progressDlg.dismiss()
                     if (success && path != null) {
-                        installApk(path)
+                        installApk(apkPath = path ?: "")
                     } else {
                         Snackbar.make(root, "下载失败：${if (path.isNullOrEmpty()) "未知错误" else path}", Snackbar.LENGTH_LONG).show()
                     }
@@ -1172,61 +1172,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // 下载 APK 并唤起安装
-    private fun downloadAndInstall(apkUrl: String) {
-        downloadProgress = android.app.ProgressDialog(this).apply {
-            setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
-            setTitle("正在下载更新")
-            setMessage("请稍候...")
-            setCancelable(false)
-            max = 100
-            show()
-        }
-        thread(name = "download-apk") {
-            var success = false
-            var failReason: String? = null
-            try {
-                val apkDir = File(cacheDir, "apk").apply { mkdirs() }
-                val apkFile = File(apkDir, "update.apk")
-                val url = java.net.URL(apkUrl)
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
-                conn.instanceFollowRedirects = true
-                val total = conn.contentLengthLong
-                val input = conn.inputStream
-                val output = FileOutputStream(apkFile)
-                val buf = ByteArray(8192)
-                var downloaded = 0L
-                var len: Int
-                while (true) {
-                    len = input.read(buf)
-                    if (len <= 0) break
-                    output.write(buf, 0, len)
-                    downloaded += len
-                    val progress = if (total > 0) ((downloaded * 100 / total).toInt()) else 0
-                    handler.post {
-                        downloadProgress?.setProgress(progress)
-                    }
-                }
-                output.close()
-                input.close()
-                success = apkFile.exists() && apkFile.length() > 0
-            } catch (e: Exception) {
-                failReason = e.message
-            }
-            val finalSuccess = success
-            val finalFail = failReason
-            handler.post {
-                downloadProgress?.dismiss()
-                downloadProgress = null
-                if (finalSuccess) {
-                    installApk()
-                } else {
-                    Snackbar.make(root, "下载失败：${finalFail ?: "未知错误"}", Snackbar.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
+    
 
     // 用 FileProvider 唤起安装
     /** 安装 APK */
