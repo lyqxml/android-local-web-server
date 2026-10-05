@@ -16,7 +16,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import eightbitlab.com.blurview.BlurView
-import eightbitlab.com.blurview.RenderScriptBlur
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -220,10 +219,8 @@ class MainActivity : ComponentActivity() {
             try {
                 blurView.setupWith(findViewById<FrameLayout>(R.id.pageContainer))
                     .setFrameClearDrawable(ColorDrawable(currentBaseBackgroundColor()))
-                    .setBlurAlgorithm(RenderScriptBlur(this))
                     .setBlurRadius(20f)
                     .setBlurAutoUpdate(true)
-                    .setHasFixedTransformationMatrix(true)
             } catch (_: Exception) {
             }
 
