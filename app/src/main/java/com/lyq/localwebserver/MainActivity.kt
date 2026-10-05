@@ -1109,42 +1109,7 @@ class MainActivity : ComponentActivity() {
                         MaterialAlertDialogBuilder(this)
                             .setTitle("发现新版本")
                             .setMessage("当前版本：${currentVersion()}\n最新版本：$latestTag\n\n是否立即下载并安装？")
-                            .setPositiveButton("立即更新") { _, _ -> val progressDlg = android.app.ProgressDialog(this)
-            progressDlg.setTitle("正在下载更新...")
-            progressDlg.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
-            progressDlg.setCanceledOnTouchOutside(false)
-            
-            // 检查权限
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val permissions = arrayOf(
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                )
-                val missing = permissions.filter { 
-                    ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED 
-                }
-                if (missing.isNotEmpty()) {
-                    // 请求权限（简化处理：实际项目应使用 Activity Result API）
-                    Snackbar.make(root, "需要文件读写权限才能下载更新", Snackbar.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-            }
-            
-            DownloadManager.downloadApk(
-                this,
-                apkUrl!!,
-                onProgress = { p -> progressDlg.setProgress(p) },
-                onFinish = { success, path ->
-                    progressDlg.dismiss()
-                    if (success && path != null) {
-                        installApk(apkPath = path ?: "")
-                    } else {
-                        Snackbar.make(root, "下载失败：${if (path.isNullOrEmpty()) "未知错误" else path}", Snackbar.LENGTH_LONG).show()
-                    }
-                }
-            )
-            progressDlg.show()
-}
+                            .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(apkUrl!!) }
                             .setNeutralButton("稍后再说", null)
                             .show()
                     }
@@ -1175,6 +1140,37 @@ class MainActivity : ComponentActivity() {
     
 
     // 用 FileProvider 唤起安装
+    /** 在 App 内下载更新，完成后拉起安装 */
+    private fun downloadAndInstall(apkUrl: String) {
+        val dlg = android.app.ProgressDialog(this).apply {
+            setTitle("正在下载更新")
+            setMessage("请稍候...")
+            setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+            setCanceledOnTouchOutside(false)
+            max = 100
+            show()
+        }
+        downloadProgress = dlg
+        DownloadManager.downloadApk(
+            this,
+            apkUrl,
+            onProgress = { p ->
+                handler.post { try { dlg.progress = p } catch (_: Exception) {} }
+            },
+            onFinish = { success, path ->
+                handler.post {
+                    try { dlg.dismiss() } catch (_: Exception) {}
+                    downloadProgress = null
+                    if (success && !path.isNullOrEmpty()) {
+                        installApk(path)
+                    } else {
+                        Snackbar.make(root, "下载失败：${path ?: "未知错误"}", Snackbar.LENGTH_LONG).show()
+                    }
+                }
+            }
+        )
+    }
+
     /** 安装 APK */
     private fun installApk(apkPath: String) {
         try {
