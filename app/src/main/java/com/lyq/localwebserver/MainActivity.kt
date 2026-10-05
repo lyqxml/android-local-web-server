@@ -1052,6 +1052,7 @@ class MainActivity : ComponentActivity() {
         val versionName = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
         } catch (_: Exception) { "未知" }
+        val curVer = versionName.removePrefix("v")
         val msg = "版本：$versionName\n包名：$packageName\n\n" +
                 "一个纯本地运行的 Android 静态网页托管服务。\n" +
                 "支持多站点、文件导入、二维码分享、访问密码、公网隧道。\n\n" +
@@ -1108,7 +1109,42 @@ class MainActivity : ComponentActivity() {
                         MaterialAlertDialogBuilder(this)
                             .setTitle("发现新版本")
                             .setMessage("当前版本：${currentVersion()}\n最新版本：$latestTag\n\n是否立即下载并安装？")
-                            .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(apkUrl!!) }
+                            .setPositiveButton("立即更新") { _, _ -> val progressDlg = android.app.ProgressDialog(this)
+            progressDlg.setTitle("正在下载更新...")
+            progressDlg.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+            progressDlg.setCanceledOnTouchOutside(false)
+            
+            // 检查权限
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val permissions = arrayOf(
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                )
+                val missing = permissions.filter { 
+                    ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED 
+                }
+                if (missing.isNotEmpty()) {
+                    // 请求权限（简化处理：实际项目应使用 Activity Result API）
+                    Snackbar.make(root, "需要文件读写权限才能下载更新", Snackbar.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+            }
+            
+            DownloadManager.downloadApk(
+                this,
+                apkUrl!!,
+                onProgress = { p -> progressDlg.setProgress(p) },
+                onFinish = { success, path ->
+                    progressDlg.dismiss()
+                    if (success && path != null) {
+                        installApk(path)
+                    } else {
+                        Snackbar.make(root, "下载失败：${if (path.isNullOrEmpty()) "未知错误" else path}", Snackbar.LENGTH_LONG).show()
+                    }
+                }
+            )
+            progressDlg.show()
+}
                             .setNeutralButton("稍后再说", null)
                             .show()
                     }
@@ -1116,7 +1152,12 @@ class MainActivity : ComponentActivity() {
                         MaterialAlertDialogBuilder(this)
                             .setTitle("检查更新")
                             .setMessage("发现新版本 $latestTag，但未找到下载链接\n请到 GitHub Releases 下载")
-                            .setPositiveButton("知道了", null)
+                            .setPositiveButton("去下载", { _, _ ->
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/$packageName/releases")))
+                                } catch (_: Exception) {}
+                            })
+                            .setNegativeButton("取消", null)
                             .show()
                     }
                 }
@@ -1188,14 +1229,24 @@ class MainActivity : ComponentActivity() {
     }
 
     // 用 FileProvider 唤起安装
-    private fun installApk() {
+    /** 安装 APK */
+    private fun installApk(apkPath: String) {
         try {
-            val apkFile = File(cacheDir, "apk/update.apk")
-            if (!apkFile.exists()) {
+            val file = File(apkPath)
+            if (!file.exists()) {
                 Snackbar.make(root, "APK 文件不存在", Snackbar.LENGTH_SHORT).show()
                 return
             }
-            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+            
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                androidx.core.content.FileProvider.getUriForFile(
+                    this,
+                    "$packageName.fileprovider",
+                    file
+                )
+            } else {
+                Uri.fromFile(file)
+            }
             val intent = Intent(Intent.ACTION_VIEW)
                 .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
