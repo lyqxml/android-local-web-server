@@ -23,4 +23,5 @@
     <color name="bottom_bg">#F2FDFCFF</color>
     <color name="top_bar_bg">#FDFCFF</color>
     <color name="nav_bar_bg">#FDFCFF</color>
+    <color name="nav_scrim">#14FFFFFF</color>
 </resources>
