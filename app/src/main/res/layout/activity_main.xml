@@ -667,15 +667,19 @@
 
             </androidx.core.widget.NestedScrollView>
 
-        <!-- 底部玻璃导航栏（悬浮于内容之上） -->
-        <LinearLayout
-            android:id="@+id/bottomNav"
+        <!-- 底部玻璃导航栏：BlurView 自动抓取背后内容做实时毛玻璃 -->
+        <eightbitlab.com.blurview.BlurView
+            android:id="@+id/bottomBlur"
             android:layout_width="match_parent"
             android:layout_height="64dp"
             android:layout_gravity="bottom"
-            android:orientation="horizontal"
-            android:background="@drawable/bg_bottom_bar"
             android:elevation="8dp">
+
+            <LinearLayout
+                android:id="@+id/bottomNav"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
 
             <LinearLayout
                 android:id="@+id/tabHome"
@@ -800,7 +804,9 @@
 
             </LinearLayout>
 
-        </LinearLayout>
+            </LinearLayout>
+
+        </eightbitlab.com.blurview.BlurView>
 
         </FrameLayout>
 
