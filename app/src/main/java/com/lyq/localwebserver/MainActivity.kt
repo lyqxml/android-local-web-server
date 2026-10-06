@@ -92,6 +92,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var tabConsoleInner: LinearLayout
     private var currentPageIndex = -1
     private lateinit var blurView: BlurView
+    private lateinit var bottomNav: LinearLayout
+    private var liquidGlassView: com.example.liquidglass.LiquidGlassView? = null
     private lateinit var toolbar: com.google.android.material.appbar.MaterialToolbar
     private var selectedProvider: Provider = TunnelService.LOCALHOST_RUN
     private var accessPassword: String? = null
@@ -216,6 +218,7 @@ class MainActivity : ComponentActivity() {
 
             // 底栏毛玻璃：由 BlurView（公开库 Dimezis/BlurView）自动抓取背后内容并实时模糊
             blurView = findViewById(R.id.bottomBlur)
+            bottomNav = findViewById(R.id.bottomNav)
             try {
                 blurView.setupWith(findViewById<FrameLayout>(R.id.pageContainer))
                     .setFrameClearDrawable(ColorDrawable(currentBaseBackgroundColor()))
@@ -1007,9 +1010,15 @@ class MainActivity : ComponentActivity() {
         updateTabBackgrounds(index)
     }
 
-    /** Tab 选中背景：现代=胶囊，经典=方形描边 */
+    /** Tab 选中背景：液态=玻璃胶囊，现代=胶囊，经典=方形描边 */
     private fun updateTabBackgrounds(selected: Int) {
-        val bgRes = if (ThemeManager.isModern(this)) R.drawable.bg_tab_pill else R.drawable.bg_tab_square
+        val modern = ThemeManager.isModern(this)
+        val liquid = modern && ThemeManager.isLiquidGlass(this)
+        val bgRes = when {
+            liquid -> R.drawable.bg_tab_liquid
+            modern -> R.drawable.bg_tab_pill
+            else -> R.drawable.bg_tab_square
+        }
         tabHomeInner.background = if (selected == 0) ContextCompat.getDrawable(this, bgRes) else null
         tabFilesInner.background = if (selected == 1) ContextCompat.getDrawable(this, bgRes) else null
         tabConsoleInner.background = if (selected == 2) ContextCompat.getDrawable(this, bgRes) else null
@@ -1024,14 +1033,80 @@ class MainActivity : ComponentActivity() {
             ThemeApply.background(this, rootLayout)
             ThemeApply.cards(this, rootLayout)
 
-            // 底栏：现代=BlurView 毛玻璃 / 经典=纯色
             val modern = ThemeManager.isModern(this)
-            findViewById<LinearLayout>(R.id.bottomNav)?.background = ContextCompat.getDrawable(
+            val liquid = modern && ThemeManager.isLiquidGlass(this)
+
+            // 底栏容器：液态=悬浮圆角 LiquidGlassView；其余=BlurView（高斯毛玻璃 / 经典纯色）
+            applyBottomBarContainer(liquid)
+            try { blurView.setBlurEnabled(!liquid) } catch (_: Exception) {}
+
+            // 底栏底色：液态交给玻璃自身（透明），现代高斯=scrim，经典=纯色
+            bottomNav.background = if (liquid) null else ContextCompat.getDrawable(
                 this,
                 if (modern) R.drawable.bg_nav_scrim else R.drawable.bg_bottom_classic
             )
             updateTabBackgrounds(currentPageIndex.coerceAtLeast(0))
         } catch (_: Exception) {}
+    }
+
+    /**
+     * 切换底栏容器（幂等）：
+     * - liquid=true  -> 把唯一的 bottomNav 搬进悬浮圆角 LiquidGlassView（左右/底部留 12dp 边距）
+     * - liquid=false -> 把 bottomNav 搬回 BlurView
+     * 只有一份 Tab 内容，在两种容器之间移动，避免重复 id 与重复事件。
+     */
+    private fun applyBottomBarContainer(liquid: Boolean) {
+        val container = findViewById<FrameLayout>(R.id.pageContainer)
+        val density = resources.displayMetrics.density
+
+        if (liquid) {
+            var glass = liquidGlassView
+            if (glass == null) {
+                glass = com.example.liquidglass.LiquidGlassView(this)
+                val lp = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    (64 * density).toInt(),
+                    android.view.Gravity.BOTTOM
+                )
+                val m = (12 * density).toInt()
+                lp.leftMargin = m
+                lp.rightMargin = m
+                lp.bottomMargin = m
+                glass.layoutParams = lp
+                try {
+                    glass.cornerRadius = 28f * density
+                    glass.enableSensorHighlight = true     // API 33+ 高光随重力变化
+                    glass.enablePressEffect = false        // 整条底栏不要跟着手指缩放
+                } catch (_: Throwable) {
+                }
+                container.addView(glass)
+                liquidGlassView = glass
+            }
+            // 背景会动，必须开，否则玻璃“冻住”（切回非液态时关掉，避免隐藏时仍逐帧采样）
+            try { glass.enableDynamicBackground = true } catch (_: Throwable) {}
+            if (bottomNav.parent !== glass) {
+                (bottomNav.parent as? ViewGroup)?.removeView(bottomNav)
+                bottomNav.layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                glass.addView(bottomNav)
+            }
+            glass.visibility = View.VISIBLE
+            blurView.visibility = View.GONE
+        } else {
+            try { liquidGlassView?.enableDynamicBackground = false } catch (_: Throwable) {}
+            if (bottomNav.parent !== blurView) {
+                (bottomNav.parent as? ViewGroup)?.removeView(bottomNav)
+                bottomNav.layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                blurView.addView(bottomNav)
+            }
+            blurView.visibility = View.VISIBLE
+            liquidGlassView?.visibility = View.GONE
+        }
     }
 
     /** 模糊帧的兜底底色（有自定义背景色时优先用它） */

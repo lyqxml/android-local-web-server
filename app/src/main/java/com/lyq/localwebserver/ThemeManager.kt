@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 object ThemeManager {
     const val PREFS_NAME = "theme_settings"
     const val KEY_DESIGN_STYLE = "design_style" // "modern" or "classic"
+    const val KEY_GLASS_STYLE = "glass_style"   // 现代模式下的玻璃风格："gaussian"(默认) or "liquid"
     const val KEY_BG_COLOR = "bg_color"         // 颜色 hex，如 "#0F1729", 或 "" (系统默认)
     const val KEY_BG_IMAGE_EXISTS = "bg_image_exists"
     const val KEY_CARD_COLOR = "card_color"     // 颜色 hex，如 "#FFFFFF", 或 "" (系统默认)
@@ -21,6 +22,17 @@ object ThemeManager {
     fun setDesignStyle(context: Context, style: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_DESIGN_STYLE, style).apply()
+    }
+
+    /** 现代模式下的玻璃风格：false=高斯模糊（原有效果，默认），true=液态玻璃 */
+    fun isLiquidGlass(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_GLASS_STYLE, "gaussian") == "liquid"
+    }
+
+    fun setGlassStyle(context: Context, style: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_GLASS_STYLE, style).apply()
     }
 
     fun getBgColor(context: Context): Int? {

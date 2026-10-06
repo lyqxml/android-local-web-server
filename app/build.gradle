@@ -21,8 +21,8 @@ android {
         applicationId 'com.lyq.localwebserver'
         minSdk 26
         targetSdk 34
-        versionCode 26
-        versionName '8.1.3'
+        versionCode 27
+        versionName '9.0.0'
     }
 
     buildTypes {
@@ -53,6 +53,8 @@ dependencies {
     implementation 'com.jcraft:jsch:0.1.55'
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.github.Dimezis:BlurView:version-2.0.3'
+    // iOS 26 液态玻璃（View 体系，API 24+；33+ 完整折射，以下降级经典模糊管线）
+    implementation 'com.github.QWEA0:liquidglass:v2.0.11'
     implementation platform('com.squareup.okhttp3:okhttp-bom:4.12.0')
     implementation 'com.squareup.okhttp3:okhttp'
 }

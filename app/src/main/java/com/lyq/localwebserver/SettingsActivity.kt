@@ -76,8 +76,40 @@ class SettingsActivity : ComponentActivity() {
             } else {
                 ThemeManager.setDesignStyle(this, "classic")
             }
+            updateGlassStyleEnabled()
             Snackbar.make(findViewById(android.R.id.content), "设计语言已切换", Snackbar.LENGTH_SHORT).show()
         }
+
+        setupGlassStyle()
+        updateGlassStyleEnabled()
+    }
+
+    /** 现代模式下的玻璃风格：液态玻璃 / 高斯模糊 */
+    private fun setupGlassStyle() {
+        val rgGlass = findViewById<RadioGroup>(R.id.rgGlassStyle)
+        val rbLiquid = findViewById<RadioButton>(R.id.rbGlassLiquid)
+        val rbGaussian = findViewById<RadioButton>(R.id.rbGlassGaussian)
+
+        if (ThemeManager.isLiquidGlass(this)) rbLiquid.isChecked = true else rbGaussian.isChecked = true
+
+        rgGlass.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == R.id.rbGlassLiquid) {
+                ThemeManager.setGlassStyle(this, "liquid")
+            } else {
+                ThemeManager.setGlassStyle(this, "gaussian")
+            }
+            Snackbar.make(findViewById(android.R.id.content), "玻璃风格已切换", Snackbar.LENGTH_SHORT).show()
+        }
+    }
+
+    /** 经典模式下玻璃风格不可选（整组置灰） */
+    private fun updateGlassStyleEnabled() {
+        val enabled = ThemeManager.isModern(this)
+        val rgGlass = findViewById<RadioGroup>(R.id.rgGlassStyle)
+        val title = findViewById<TextView>(R.id.tvGlassStyleTitle)
+        rgGlass.alpha = if (enabled) 1f else 0.4f
+        for (i in 0 until rgGlass.childCount) rgGlass.getChildAt(i).isEnabled = enabled
+        title.alpha = if (enabled) 1f else 0.4f
     }
 
     private fun setupBgColors() {

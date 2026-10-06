@@ -79,7 +79,7 @@
                             android:id="@+id/rbModern"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="现代（默认：圆角卡片、胶囊选中态、高斯模糊）"
+                            android:text="现代（默认：圆角卡片、胶囊选中态，可选高斯/液态玻璃）"
                             android:textSize="14sp"
                             android:textColor="@color/text_primary" />
 
@@ -88,6 +88,42 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="经典（方方正正：直角卡片、无模糊、硬朗边框）"
+                            android:textSize="14sp"
+                            android:textColor="@color/text_primary"
+                            android:layout_marginTop="6dp" />
+
+                    </RadioGroup>
+
+                    <TextView
+                        android:id="@+id/tvGlassStyleTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="玻璃风格（仅现代模式可选）"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_primary"
+                        android:layout_marginTop="16dp" />
+
+                    <RadioGroup
+                        android:id="@+id/rgGlassStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="vertical">
+
+                        <RadioButton
+                            android:id="@+id/rbGlassLiquid"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="液态玻璃（iOS 26 折射 / 感应高光，悬浮圆角玻璃条）"
+                            android:textSize="14sp"
+                            android:textColor="@color/text_primary" />
+
+                        <RadioButton
+                            android:id="@+id/rbGlassGaussian"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="高斯模糊（原有效果）"
                             android:textSize="14sp"
                             android:textColor="@color/text_primary"
                             android:layout_marginTop="6dp" />
