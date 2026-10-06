@@ -1036,8 +1036,8 @@ class MainActivity : ComponentActivity() {
             val modern = ThemeManager.isModern(this)
             val liquid = modern && ThemeManager.isLiquidGlass(this)
 
-            // 底栏容器：液态=悬浮圆角 LiquidGlassView；其余=BlurView（高斯毛玻璃 / 经典纯色）
-            applyBottomBarContainer(liquid)
+            // 底栏容器：液态=悬浮圆角 LiquidGlassView；现代高斯=同款悬浮圆角 BlurView；经典=贴边全宽
+            applyBottomBarContainer(modern, liquid)
             try { blurView.setBlurEnabled(!liquid) } catch (_: Exception) {}
 
             // 底栏底色：液态交给玻璃自身（透明），现代高斯=scrim，经典=纯色
@@ -1051,30 +1051,31 @@ class MainActivity : ComponentActivity() {
 
     /**
      * 切换底栏容器（幂等）：
-     * - liquid=true  -> 把唯一的 bottomNav 搬进悬浮圆角 LiquidGlassView（左右/底部留 12dp 边距）
-     * - liquid=false -> 把 bottomNav 搬回 BlurView
+     * - liquid=true         -> bottomNav 搬进悬浮圆角 LiquidGlassView（12dp 边距 / 28dp 圆角）
+     * - modern=true, 液态否 -> bottomNav 放回 BlurView，并把 BlurView 也裁成同款悬浮圆角条（高斯模糊）
+     * - modern=false(经典)  -> bottomNav 放回 BlurView，贴边全宽、直角
      * 只有一份 Tab 内容，在两种容器之间移动，避免重复 id 与重复事件。
      */
-    private fun applyBottomBarContainer(liquid: Boolean) {
+    private fun applyBottomBarContainer(modern: Boolean, liquid: Boolean) {
         val container = findViewById<FrameLayout>(R.id.pageContainer)
         val density = resources.displayMetrics.density
+        val m = (12 * density).toInt()
+        val radius = 28f * density
+        val barHeight = (64 * density).toInt()
 
         if (liquid) {
             var glass = liquidGlassView
             if (glass == null) {
                 glass = com.example.liquidglass.LiquidGlassView(this)
                 val lp = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    (64 * density).toInt(),
-                    android.view.Gravity.BOTTOM
+                    FrameLayout.LayoutParams.MATCH_PARENT, barHeight, android.view.Gravity.BOTTOM
                 )
-                val m = (12 * density).toInt()
                 lp.leftMargin = m
                 lp.rightMargin = m
                 lp.bottomMargin = m
                 glass.layoutParams = lp
                 try {
-                    glass.cornerRadius = 28f * density
+                    glass.cornerRadius = radius
                     glass.enableSensorHighlight = true     // API 33+ 高光随重力变化
                     glass.enablePressEffect = false        // 整条底栏不要跟着手指缩放
                 } catch (_: Throwable) {
@@ -1096,6 +1097,28 @@ class MainActivity : ComponentActivity() {
             blurView.visibility = View.GONE
         } else {
             try { liquidGlassView?.enableDynamicBackground = false } catch (_: Throwable) {}
+            // 高斯（现代）= 悬浮圆角；经典 = 贴边全宽直角
+            val lp = (blurView.layoutParams as? FrameLayout.LayoutParams)
+                ?: FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, barHeight)
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
+            lp.height = barHeight
+            lp.gravity = android.view.Gravity.BOTTOM
+            lp.leftMargin = if (modern) m else 0
+            lp.rightMargin = if (modern) m else 0
+            lp.bottomMargin = if (modern) m else 0
+            blurView.layoutParams = lp
+            if (modern) {
+                // 把实时模糊层裁成圆角 -> 和液态玻璃同款悬浮圆角玻璃条
+                blurView.outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, radius)
+                    }
+                }
+                blurView.clipToOutline = true
+            } else {
+                blurView.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+                blurView.clipToOutline = false
+            }
             if (bottomNav.parent !== blurView) {
                 (bottomNav.parent as? ViewGroup)?.removeView(bottomNav)
                 bottomNav.layoutParams = FrameLayout.LayoutParams(
@@ -1146,19 +1169,37 @@ class MainActivity : ComponentActivity() {
         thread(name = "check-update") {
             var latestTag: String? = null
             var apkUrl: String? = null
+            var notes: String? = null
             var error: String? = null
             try {
-                val currentVersion = try {
-                    packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
-                } catch (_: Exception) { "未知" }
                 val apiUrl = java.net.URL("https://api.github.com/repos/lyqxml/android-local-web-server/releases/latest")
                 val conn = apiUrl.openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 10000
                 conn.readTimeout = 10000
                 conn.setRequestProperty("Accept", "application/vnd.github+json")
+                conn.setRequestProperty("User-Agent", "LocalWebServer-Updater")
                 val text = conn.inputStream.bufferedReader().readText()
-                latestTag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-                apkUrl = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(text)?.groupValues?.get(1)
+                // 用 JSONObject 正规解析（比正则稳），并顺带取更新说明
+                val json = JSONObject(text)
+                val tag = json.optString("tag_name", "").ifEmpty { null }
+                latestTag = tag
+                notes = json.optString("body", "").ifEmpty { null }
+                val assets = json.optJSONArray("assets")
+                if (assets != null) {
+                    for (i in 0 until assets.length()) {
+                        val a = assets.optJSONObject(i) ?: continue
+                        val name = a.optString("name", "")
+                        val url = a.optString("browser_download_url", "")
+                        if ((name.endsWith(".apk", true) || url.endsWith(".apk", true)) && url.isNotEmpty()) {
+                            apkUrl = url
+                            break
+                        }
+                    }
+                }
+                // 兜底：按 GitHub Releases 资产地址规则拼，避免个别机型取不到链接就只会“去仓库”
+                if (apkUrl == null && tag != null) {
+                    apkUrl = "https://github.com/lyqxml/android-local-web-server/releases/download/$tag/app-release.apk"
+                }
                 if (latestTag == null) error = "无法解析版本信息"
             } catch (e: Exception) {
                 error = "检查失败：${e.message}"
@@ -1181,9 +1222,12 @@ class MainActivity : ComponentActivity() {
                             .show()
                     }
                     latestTag != null && apkUrl != null -> {
+                        val msg = "当前版本：${currentVersion()}\n最新版本：${latestTag}\n" +
+                                (notes?.trim()?.takeIf { it.isNotEmpty() }?.let { "\n更新说明：\n$it\n" } ?: "") +
+                                "\n是否立即下载并安装？"
                         MaterialAlertDialogBuilder(this)
                             .setTitle("发现新版本")
-                            .setMessage("当前版本：${currentVersion()}\n最新版本：$latestTag\n\n是否立即下载并安装？")
+                            .setMessage(msg)
                             .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(apkUrl!!) }
                             .setNeutralButton("稍后再说", null)
                             .show()

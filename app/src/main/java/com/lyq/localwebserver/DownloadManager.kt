@@ -40,7 +40,11 @@ object DownloadManager {
                 }
 
                 val total = body.contentLength()
-                val outFile = File(context.cacheDir, "update.apk")
+                // 必须落在 file_paths.xml 暴露的 cache/apk/ 目录下，
+                // 否则 FileProvider.getUriForFile 会抛 “Failed to find configured root”，安装必然失败
+                val apkDir = File(context.cacheDir, "apk")
+                if (!apkDir.exists()) apkDir.mkdirs()
+                val outFile = File(apkDir, "update.apk")
                 if (outFile.exists()) outFile.delete()
 
                 var done = 0L
