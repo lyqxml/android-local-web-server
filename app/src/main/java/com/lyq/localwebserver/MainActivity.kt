@@ -1040,10 +1040,10 @@ class MainActivity : ComponentActivity() {
             applyBottomBarContainer(modern, liquid)
             try { blurView.setBlurEnabled(!liquid) } catch (_: Exception) {}
 
-            // 底栏底色：液态交给玻璃自身（透明），现代高斯=scrim，经典=纯色
-            bottomNav.background = if (liquid) null else ContextCompat.getDrawable(
+            // 底栏“玻璃质感层”：现代（高斯/液态都）加顶部内高光 + 高光描边，纯色背景上也能看出玻璃
+            bottomNav.background = ContextCompat.getDrawable(
                 this,
-                if (modern) R.drawable.bg_nav_scrim else R.drawable.bg_bottom_classic
+                if (modern) R.drawable.bg_nav_glass else R.drawable.bg_bottom_classic
             )
             updateTabBackgrounds(currentPageIndex.coerceAtLeast(0))
         } catch (_: Exception) {}
@@ -1078,6 +1078,9 @@ class MainActivity : ComponentActivity() {
                     glass.cornerRadius = radius
                     glass.enableSensorHighlight = true     // API 33+ 高光随重力变化
                     glass.enablePressEffect = false        // 整条底栏不要跟着手指缩放
+                    glass.dispersionStrength = 0.25f       // 边缘色散更明显（默认 0.10，纯色背景也能看出彩边）
+                    glass.saturation = 165f                // 饱和度提升，玻璃更“活”
+                    glass.enableShadow = true              // 悬浮投影，更像浮起来的一层
                 } catch (_: Throwable) {
                 }
                 container.addView(glass)
