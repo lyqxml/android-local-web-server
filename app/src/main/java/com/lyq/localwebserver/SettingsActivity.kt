@@ -3,8 +3,6 @@ package com.lyq.localwebserver
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.widget.Button
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -12,15 +10,9 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
 
 class SettingsActivity : ComponentActivity() {
-
-    private val handler = Handler(Looper.getMainLooper())
 
     private val pickBgImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -210,36 +202,12 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun checkUpdate() {
-        thread(name = "check-update-settings") {
-            var latestTag: String? = null
-            var error: String? = null
-            try {
-                val currentVer = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "8.1.0" } catch (_: Exception) { "8.1.0" }
-                val apiUrl = URL("https://api.github.com/repos/lyqxml/android-local-web-server/releases/latest")
-                val conn = apiUrl.openConnection() as HttpURLConnection
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
-                conn.setRequestProperty("Accept", "application/vnd.github+json")
-                val text = conn.inputStream.bufferedReader().readText()
-                latestTag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(text)?.groupValues?.get(1)
-            } catch (e: Exception) {
-                error = e.message
-            }
+        // 与主页共用同一套应用内更新 UI：可直接"立即更新"下载安装，不再只是"请到主页"
+        AppUpdater.checkForUpdate(this, findViewById(android.R.id.content))
+    }
 
-            handler.post {
-                val cur = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "8.1.0" } catch (_: Exception) { "8.1.0" }
-                val msg = when {
-                    error != null -> "检查失败：$error"
-                    latestTag != null && latestTag.removePrefix("v") == cur.removePrefix("v") -> "已是最新版本（$cur）"
-                    latestTag != null -> "发现新版本：$latestTag\n当前版本：$cur\n请到主页检查更新下载"
-                    else -> "无法解析版本信息"
-                }
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("检查更新")
-                    .setMessage(msg)
-                    .setPositiveButton("知道了", null)
-                    .show()
-            }
-        }
+    override fun onDestroy() {
+        AppUpdater.dismissProgress()
+        super.onDestroy()
     }
 }

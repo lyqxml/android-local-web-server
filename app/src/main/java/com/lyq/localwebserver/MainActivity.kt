@@ -114,7 +114,6 @@ class MainActivity : ComponentActivity() {
         }
     }
     // 更新下载相关
-    private var downloadProgress: android.app.ProgressDialog? = null
     // 自定义服务器参数（从 SharedPreferences 恢复）
     private var customHost: String = ""
     private var customPort: Int = 22
@@ -1169,160 +1168,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkUpdate() {
-        thread(name = "check-update") {
-            var latestTag: String? = null
-            var apkUrl: String? = null
-            var notes: String? = null
-            var error: String? = null
-            try {
-                val apiUrl = java.net.URL("https://api.github.com/repos/lyqxml/android-local-web-server/releases/latest")
-                val conn = apiUrl.openConnection() as java.net.HttpURLConnection
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
-                conn.setRequestProperty("Accept", "application/vnd.github+json")
-                conn.setRequestProperty("User-Agent", "LocalWebServer-Updater")
-                val text = conn.inputStream.bufferedReader().readText()
-                // 用 JSONObject 正规解析（比正则稳），并顺带取更新说明
-                val json = JSONObject(text)
-                val tag = json.optString("tag_name", "").ifEmpty { null }
-                latestTag = tag
-                notes = json.optString("body", "").ifEmpty { null }
-                val assets = json.optJSONArray("assets")
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val a = assets.optJSONObject(i) ?: continue
-                        val name = a.optString("name", "")
-                        val url = a.optString("browser_download_url", "")
-                        if ((name.endsWith(".apk", true) || url.endsWith(".apk", true)) && url.isNotEmpty()) {
-                            apkUrl = url
-                            break
-                        }
-                    }
-                }
-                // 兜底：按 GitHub Releases 资产地址规则拼，避免个别机型取不到链接就只会“去仓库”
-                if (apkUrl == null && tag != null) {
-                    apkUrl = "https://github.com/lyqxml/android-local-web-server/releases/download/$tag/app-release.apk"
-                }
-                if (latestTag == null) error = "无法解析版本信息"
-            } catch (e: Exception) {
-                error = "检查失败：${e.message}"
-            }
-
-            handler.post {
-                when {
-                    error != null -> {
-                        MaterialAlertDialogBuilder(this)
-                            .setTitle("检查更新")
-                            .setMessage(error!!)
-                            .setPositiveButton("知道了", null)
-                            .show()
-                    }
-                    latestTag != null && latestTag!!.removePrefix("v") == currentVersion().removePrefix("v") -> {
-                        MaterialAlertDialogBuilder(this)
-                            .setTitle("检查更新")
-                            .setMessage("已是最新版本（${currentVersion()}）")
-                            .setPositiveButton("知道了", null)
-                            .show()
-                    }
-                    latestTag != null && apkUrl != null -> {
-                        val msg = "当前版本：${currentVersion()}\n最新版本：${latestTag}\n" +
-                                (notes?.trim()?.takeIf { it.isNotEmpty() }?.let { "\n更新说明：\n$it\n" } ?: "") +
-                                "\n是否立即下载并安装？"
-                        MaterialAlertDialogBuilder(this)
-                            .setTitle("发现新版本")
-                            .setMessage(msg)
-                            .setPositiveButton("立即更新") { _, _ -> downloadAndInstall(apkUrl!!) }
-                            .setNeutralButton("稍后再说", null)
-                            .show()
-                    }
-                    else -> {
-                        MaterialAlertDialogBuilder(this)
-                            .setTitle("检查更新")
-                            .setMessage("发现新版本 $latestTag，但未找到下载链接\n请到 GitHub Releases 下载")
-                            .setPositiveButton("去下载", { _, _ ->
-                                try {
-                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/$packageName/releases")))
-                                } catch (_: Exception) {}
-                            })
-                            .setNegativeButton("取消", null)
-                            .show()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun currentVersion(): String {
-        return try {
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
-        } catch (_: Exception) { "未知" }
-    }
-
-    // 下载 APK 并唤起安装
-    
-
-    // 用 FileProvider 唤起安装
-    /** 在 App 内下载更新，完成后拉起安装 */
-    private fun downloadAndInstall(apkUrl: String) {
-        val dlg = android.app.ProgressDialog(this).apply {
-            setTitle("正在下载更新")
-            setMessage("请稍候...")
-            setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
-            setCanceledOnTouchOutside(false)
-            max = 100
-            show()
-        }
-        downloadProgress = dlg
-        DownloadManager.downloadApk(
-            this,
-            apkUrl,
-            onProgress = { p ->
-                handler.post { try { dlg.progress = p } catch (_: Exception) {} }
-            },
-            onFinish = { success, path ->
-                handler.post {
-                    try { dlg.dismiss() } catch (_: Exception) {}
-                    downloadProgress = null
-                    if (success && !path.isNullOrEmpty()) {
-                        installApk(path)
-                    } else {
-                        Snackbar.make(root, "下载失败：${path ?: "未知错误"}", Snackbar.LENGTH_LONG).show()
-                    }
-                }
-            }
-        )
-    }
-
-    /** 安装 APK */
-    private fun installApk(apkPath: String) {
-        try {
-            val file = File(apkPath)
-            if (!file.exists()) {
-                Snackbar.make(root, "APK 文件不存在", Snackbar.LENGTH_SHORT).show()
-                return
-            }
-            
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                androidx.core.content.FileProvider.getUriForFile(
-                    this,
-                    "$packageName.fileprovider",
-                    file
-                )
-            } else {
-                Uri.fromFile(file)
-            }
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Snackbar.make(root, "安装失败：${e.message}", Snackbar.LENGTH_LONG).show()
-        }
+        // 主页与设置页共用同一套应用内更新 UI（AppUpdater）
+        AppUpdater.checkForUpdate(this, root)
     }
 
     override fun onDestroy() {
-        try { downloadProgress?.dismiss() } catch (_: Exception) {}
+        AppUpdater.dismissProgress()
         try { unregisterReceiver(receiver) } catch (_: Exception) {}
         try { unregisterReceiver(tunnelReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(statsReceiver) } catch (_: Exception) {}
